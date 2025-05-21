@@ -106,7 +106,7 @@ app.post('/api/send-email', async (req, res) => {
 
     // Send mail to all recipients
     const info = await transporter.sendMail({
-      from: `"InterviewDost" <${process.env.GMAIL_USER}>`,
+      from: `"Global Maths Challenge" <${process.env.GMAIL_USER}>`,
       to: recipients.join(', '),
       subject,
       text,
