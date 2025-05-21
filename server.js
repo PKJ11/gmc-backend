@@ -17,7 +17,7 @@ const mongoose = require('mongoose');
 const User = require('./models/User'); // You'll need to create this model
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/gmc').then(()=>{console.log("backend connected ")});
+mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://pratikkumarjhavnit:cBkOwgGUuMB4ZMia@cluster0.sxfhet5.mongodb.net/gmc?retryWrites=true&w=majority').then(()=>{console.log("backend connected ")});
 
 // User data endpoint
 app.post('/api/users', async (req, res) => {
@@ -27,6 +27,34 @@ app.post('/api/users', async (req, res) => {
     res.status(201).json({ success: true, data: user });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
+  }
+});
+app.get('/api/users/:email', async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.params.email });
+    console.log("api is hitted")
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'User not found',
+        completed: false
+      });
+    }
+    
+    // Check if required fields are filled
+    const isProfileComplete = user.fullName && user.grade && user.dob && user.school;
+    
+    res.status(200).json({ 
+      success: true, 
+      data: user,
+      completed: isProfileComplete
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      completed: false
+    });
   }
 });
 
