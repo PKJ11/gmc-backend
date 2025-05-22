@@ -27,11 +27,13 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://pratikkumarjhavnit:cB
 
 // User Model endpoints remain the same
 app.post('/api/users', async (req, res) => {
+  console.log("hi user")
   try {
     const user = new User(req.body);
     await user.save();
     res.status(201).json({ success: true, data: user });
   } catch (error) {
+    console.log(error)
     res.status(400).json({ success: false, error: error.message });
   }
 });
