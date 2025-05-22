@@ -65,6 +65,8 @@ app.get('/api/users/:email', async (req, res) => {
 // Enhanced Email Endpoint with all improvements
 app.post('/api/send-email', async (req, res) => {
   const { subject, text, recipients } = req.body;
+
+  console.log("new code genrated")
   
   // Validate input
   if (!subject || !text || !recipients || !Array.isArray(recipients)) {
@@ -162,7 +164,7 @@ function generateEmailTemplate(subject, text) {
 </head>
 <body>
     <div class="header">
-        <h2>Global Maths Challenge</h2>
+        <h2>Global Math Challenge</h2>
     </div>
     <div class="content">
         <h3>${subject}</h3>
