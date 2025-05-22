@@ -25,16 +25,61 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://pratikkumarjhavnit:cB
 .then(() => console.log("MongoDB connected successfully"))
 .catch(err => console.error("MongoDB connection error:", err));
 
-// User Model endpoints remain the same
+
 app.post('/api/users', async (req, res) => {
-  console.log("hi user")
   try {
-    const user = new User(req.body);
+    // Validate required fields
+    const requiredFields = ['email', 'username', 'password', 'fullName', 'grade', 'dob', 'school', 'mobileNumber'];
+    const missingFields = requiredFields.filter(field => !req.body[field]);
+    
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Missing required fields: ${missingFields.join(', ')}`
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ 
+      $or: [
+        { email: req.body.email },
+        { username: req.body.username }
+      ]
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: existingUser.email === req.body.email 
+          ? 'Email already exists' 
+          : 'Username already exists'
+      });
+    }
+
+    // Create new user
+    const user = new User({
+      ...req.body,
+      // Convert dob string to Date if needed
+      dob: req.body.dob // Now accepts string directly
+    });
+
     await user.save();
-    res.status(201).json({ success: true, data: user });
+    
+    // Return success response (excluding password)
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.status(201).json({ 
+      success: true, 
+      data: userResponse 
+    });
+
   } catch (error) {
-    console.log(error)
-    res.status(400).json({ success: false, error: error.message });
+    console.error('User creation error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Server error during user creation'
+    });
   }
 });
 
