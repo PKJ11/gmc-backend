@@ -25,6 +25,8 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://pratikkumarjhavnit:cB
 .then(() => console.log("MongoDB connected successfully"))
 .catch(err => console.error("MongoDB connection error:", err));
 
+// User Model endpoints remain the same
+const User = require('./models/User'); // Make sure this path is correct
 
 app.post('/api/users', async (req, res) => {
   try {
