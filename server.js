@@ -36,7 +36,50 @@ mongoose
   .then(() => console.log("MongoDB connected successfully"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// Make sure this path is correct
+const otpRouter = express.Router();
+
+otpRouter.post("/send-otp", async (req, res) => {
+  const { mobileNumber } = req.body;
+
+  if (!mobileNumber) {
+    return res.status(400).json({ error: "Mobile number is required" });
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  // Save OTP in DB or cache here if needed
+  console.log(`OTP for ${mobileNumber}: ${otp}`);
+
+  try {
+    await axios.post(
+      "https://api.interakt.ai/v1/public/message/",
+      {
+        countryCode: "91",
+        phoneNumber: mobileNumber,
+        callbackData: "send-otp",
+        type: "Template",
+        template: {
+          name: "otp_template",
+          languageCode: "en",
+          bodyValues: [otp],
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.INTERAKT_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    res.status(200).json({ message: "OTP sent successfully" });
+  } catch (err) {
+    console.error("Error sending OTP:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to send OTP" });
+  }
+});
+
+app.use("/api", otpRouter);
 
 app.post("/api/users", async (req, res) => {
   try {
@@ -292,8 +335,8 @@ app.post("/api/send-email-with-pdf", upload.single("pdf"), async (req, res) => {
 });
 
 // assuming express is already set up
-app.post('/api/webhook/interakt', (req, res) => {
-  console.log('Received webhook:', req.body);
+app.post("/api/webhook/interakt", (req, res) => {
+  console.log("Received webhook:", req.body);
   res.sendStatus(200); // Respond with 200 to acknowledge receipt
 });
 
