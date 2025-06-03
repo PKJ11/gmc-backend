@@ -291,6 +291,12 @@ app.post("/api/send-email-with-pdf", upload.single("pdf"), async (req, res) => {
   }
 });
 
+// assuming express is already set up
+app.post('/api/webhook/interakt', (req, res) => {
+  console.log('Received webhook:', req.body);
+  res.sendStatus(200); // Respond with 200 to acknowledge receipt
+});
+
 // Custom HTML template for PDF emails
 function generatePdfEmailTemplate(subject, text) {
   return `
