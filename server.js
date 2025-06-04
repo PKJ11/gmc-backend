@@ -297,6 +297,125 @@ app.post('/api/webhook/interakt', (req, res) => {
   res.sendStatus(200); // Respond with 200 to acknowledge receipt
 });
 
+const sampleTests = {
+  "Grade4": [
+    {
+      id: "q1",
+      type: "multiple-choice",
+      question: "What is 5 + 7?",
+      options: [
+        { id: "a", text: "10" },
+        { id: "b", text: "11" },
+        { id: "c", text: "12" },
+        { id: "d", text: "13" }
+      ],
+      correctAnswer: "c"
+    },
+    {
+      id: "q2",
+      type: "multiple-choice",
+      question: "Which number is a multiple of 3?",
+      options: [
+        { id: "a", text: "8" },
+        { id: "b", text: "9" },
+        { id: "c", text: "14" },
+        { id: "d", text: "17" }
+      ],
+      correctAnswer: "b"
+    },
+    {
+      id: "q3",
+      type: "short-answer",
+      question: "What is the square of 6?",
+      correctAnswer: "36"
+    },
+    {
+      id: "q4",
+      type: "true-false",
+      question: "A rectangle has four equal sides.",
+      correctAnswer: "false"
+    }
+  ],
+
+  "Grade5": [
+    {
+      id: "q1",
+      type: "multiple-choice",
+      question: "What is the value of 3² + 4²?",
+      options: [
+        { id: "a", text: "12" },
+        { id: "b", text: "18" },
+        { id: "c", text: "25" },
+        { id: "d", text: "30" }
+      ],
+      correctAnswer: "c"
+    },
+    {
+      id: "q2",
+      type: "multiple-choice",
+      question: "Which of the following is a prime number?",
+      options: [
+        { id: "a", text: "21" },
+        { id: "b", text: "25" },
+        { id: "c", text: "29" },
+        { id: "d", text: "33" }
+      ],
+      correctAnswer: "c"
+    },
+    {
+      id: "q3",
+      type: "short-answer",
+      question: "What is 100 divided by 4?",
+      correctAnswer: "25"
+    },
+    {
+      id: "q4",
+      type: "true-false",
+      question: "The sum of angles in a triangle is 180 degrees.",
+      correctAnswer: "true"
+    }
+  ],
+
+  "default": [
+    {
+      id: "q1",
+      type: "multiple-choice",
+      question: "What is 2 + 2?",
+      options: [
+        { id: "a", text: "3" },
+        { id: "b", text: "4" },
+        { id: "c", text: "5" },
+        { id: "d", text: "6" }
+      ],
+      correctAnswer: "b"
+    },
+    {
+      id: "q2",
+      type: "true-false",
+      question: "10 is an even number.",
+      correctAnswer: "true"
+    }
+  ]
+};
+
+
+app.get('/api/sample-test/:grade', async (req, res) => {
+  try {
+    const grade = req.params.grade || 'default';
+    const questions = sampleTests[grade] || sampleTests['default'];
+    
+    res.status(200).json({
+      success: true,
+      data: questions
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Custom HTML template for PDF emails
 function generatePdfEmailTemplate(subject, text) {
   return `
