@@ -4,6 +4,7 @@ const cors = require("cors");
 const nodemailer = require("nodemailer");
 const { v4: uuidv4 } = require("uuid");
 const mongoose = require("mongoose");
+const crypto = require('crypto');
 
 const User = require("./models/User");
 const multer = require("multer");
@@ -688,41 +689,122 @@ const questionSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  options: {
-    type: [mongoose.Schema.Types.Mixed], // Accept both objects and strings
-    required: function () {
-      return this.type === "multiple-choice" || this.type === "drag-and-drop";
+  // Media attachments for the question itself
+  media: [{
+    url: {
+      type: String,
+      required: true
     },
-  },
-  items: {
-    // Add separate field for drag-and-drop items
-    type: [String],
-    required: function () {
-      return this.type === "drag-and-drop";
-    },
-  },
-  correctOrder: {
-    type: [String],
-    required: function () {
-      return this.type === "drag-and-drop";
-    },
-  },
-  correctAnswer: mongoose.Schema.Types.Mixed, // Can be string, array, etc. depending on question type
-
-  pairs: [
-    {
-      // For match-pairs
-      id: String,
-      left: String,
-      right: String,
-    },
-  ],
+    type: {
+      type: String,
+      enum: ["image", "video"],
+      required: true
+    }
+  }],
   difficulty: {
     type: String,
     enum: ["easy", "medium", "hard"],
     default: "medium",
   },
   tags: [String],
+  
+  // Multiple choice options
+  options: [{
+    id: {
+      type: String,
+      required: true
+    },
+    text: {
+      type: String,
+      required: true
+    },
+    // Media for each option
+    media: [{
+      url: {
+        type: String,
+        required: true
+      },
+      type: {
+        type: String,
+        enum: ["image", "video"],
+        required: true
+      }
+    }]
+  }],
+  
+  // For drag-and-drop questions
+  items: [{
+    id: {
+      type: String,
+      required: true
+    },
+    text: {
+      type: String,
+      required: true
+    },
+    // Media for drag-and-drop items
+    media: [{
+      url: {
+        type: String,
+        required: true
+      },
+      type: {
+        type: String,
+        enum: ["image", "video"],
+        required: true
+      }
+    }]
+  }],
+  
+  correctOrder: {
+    type: [String],
+    required: function () {
+      return this.type === "drag-and-drop";
+    },
+  },
+  
+  correctAnswer: {
+    type: mongoose.Schema.Types.Mixed
+  },
+  
+  // For match-pairs questions
+  pairs: [{
+    left: {
+      text: {
+        type: String,
+        required: true
+      },
+      media: [{
+        url: {
+          type: String,
+          required: true
+        },
+        type: {
+          type: String,
+          enum: ["image", "video"],
+          required: true
+        }
+      }]
+    },
+    right: {
+      text: {
+        type: String,
+        required: true
+      },
+      media: [{
+        url: {
+          type: String,
+          required: true
+        },
+        type: {
+          type: String,
+          enum: ["image", "video"],
+          required: true
+        }
+      }]
+    }
+  }],
+  
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
@@ -734,7 +816,91 @@ const questionSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now,
-  },
+  }
+}, {
+  // Add virtuals when converting to JSON
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Add validation for required fields based on question type
+questionSchema.pre('validate', function(next) {
+  const question = this;
+  
+  // Validate multiple-choice questions
+  if (question.type === 'multiple-choice') {
+    if (!question.options || question.options.length < 2) {
+      return next(new Error('Multiple-choice questions require at least 2 options'));
+    }
+    if (!question.correctAnswer) {
+      return next(new Error('Multiple-choice questions require a correct answer'));
+    }
+  }
+  
+  // Validate drag-and-drop questions
+  if (question.type === 'drag-and-drop') {
+    if (!question.items || question.items.length < 2) {
+      return next(new Error('Drag-and-drop questions require at least 2 items'));
+    }
+    if (!question.correctOrder || question.correctOrder.length !== question.items.length) {
+      return next(new Error('Drag-and-drop questions require a correct order for all items'));
+    }
+  }
+  
+  // Validate match-pairs questions
+  if (question.type === 'match-pairs') {
+    if (!question.pairs || question.pairs.length < 2) {
+      return next(new Error('Match-pairs questions require at least 2 pairs'));
+    }
+  }
+  
+  // Validate short-answer questions
+  if (question.type === 'short-answer' && !question.correctAnswer) {
+    return next(new Error('Short-answer questions require a correct answer'));
+  }
+  
+  next();
+});
+
+// Update timestamp on save
+questionSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Add to your server.js (or wherever your routes are)
+// In your server.js or routes file
+app.get("/api/imagekit-auth", (req, res) => {
+  try {
+    // 1. Validate environment configuration
+    if (!process.env.IMAGEKIT_PRIVATE_KEY) {
+      throw new Error("ImageKit private key not configured");
+    }
+
+    // 2. Generate authentication parameters
+    const timestamp = Math.floor(Date.now() / 1000);
+    const token = uuidv4(); // Always generate fresh token
+    
+    // 3. Calculate signature CORRECTLY
+    const signature = crypto
+      .createHmac('sha1', process.env.IMAGEKIT_PRIVATE_KEY)
+      .update(`${timestamp}${token}`) // Must concatenate as strings
+      .digest('hex');
+
+    // 4. Return properly structured response
+    res.json({
+      signature,
+      token,
+      expire: timestamp + 3600 // Valid for 1 hour
+    });
+    
+  } catch (error) {
+    console.error("ImageKit auth error:", error);
+    res.status(500).json({ 
+      error: "Authentication failed",
+      details: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
 });
 
 const Question = mongoose.model("Question", questionSchema);
