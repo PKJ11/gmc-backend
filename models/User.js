@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema({
   school: { type: String, required: true },
   branch: { type: String },
   mobileNumber: { type: String, required: true },
+  alternatePhoneNumber: { type: String, required: true },
   createdAt: { type: Date, default: Date.now }
 });
 

@@ -78,6 +78,7 @@ app.post("/api/users", async (req, res) => {
     // Create new user
     const user = new User({
       ...req.body,
+      alternatePhoneNumber: req.body.alternatePhoneNumber || undefined, // Set to undefined if empty
       // Convert dob string to Date if needed
       dob: req.body.dob, // Now accepts string directly
     });
