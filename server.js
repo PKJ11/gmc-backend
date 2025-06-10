@@ -9,6 +9,10 @@ const User = require("./models/User");
 const multer = require("multer");
 const upload = multer();
 
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+require("dotenv").config();
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -38,6 +42,150 @@ mongoose
 
 // Make sure this path is correct
 
+// Add this new route for phone number login
+// Update your login-with-phone endpoint
+app.post("/api/auth/login-with-phone", async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        error: "Phone number and Firebase UID are required",
+      });
+    }
+
+    
+    // Find user by phone number
+    const user = await User.findOne({ mobileNumber: phone });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "Phone number not registered",
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id, email: user.email, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    res.status(200).json({
+      success: true,
+      token,
+      data: user,
+    });
+  } catch (error) {
+    console.error("Phone login error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Update your existing login endpoint to support phone login
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, phone, password } = req.body;
+
+    // Check if email or phone exists
+    if ((!email && !phone) || !password) {
+      return res.status(400).json({
+        success: false,
+        error: "Please provide email/phone and password",
+      });
+    }
+
+    // Find user by email or phone
+    const user = await User.findOne({
+      $or: [{ email }, { mobileNumber: phone }]
+    }).select("+password");
+
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({
+        success: false,
+        error: "Incorrect credentials",
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id, email: user.email, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    // Remove password from output
+    user.password = undefined;
+
+    res.status(200).json({
+      success: true,
+      token,
+      data: user,
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+const authMiddleware = async (req, res, next) => {
+  try {
+    // 1) Getting token and check if it's there
+    let token;
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith("Bearer")
+    ) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: "You are not logged in! Please log in to get access.",
+      });
+    }
+
+    // 2) Verification token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // 3) Check if user still exists
+    const currentUser = await User.findById(decoded.id);
+    if (!currentUser) {
+      return res.status(401).json({
+        success: false,
+        error: "The user belonging to this token does no longer exist.",
+      });
+    }
+
+    // GRANT ACCESS TO PROTECTED ROUTE
+    req.user = currentUser;
+    next();
+  } catch (error) {
+    console.error("Authentication error:", error);
+    res.status(401).json({
+      success: false,
+      error: "Invalid token. Please log in again.",
+    });
+  }
+};
+// Add this to your backend
+app.get("/api/auth/verify", authMiddleware, (req, res) => {
+  res.status(200).json({
+    success: true,
+    data: {
+      user: req.user,
+    },
+  });
+});
+
 app.post("/api/users", async (req, res) => {
   try {
     // Validate required fields
@@ -60,9 +208,14 @@ app.post("/api/users", async (req, res) => {
       });
     }
 
-    // Check if user already exists
+    // Check if user already exists (email, username, or mobile number)
+
     const existingUser = await User.findOne({
-      $or: [{ email: req.body.email }, { username: req.body.username }],
+      $or: [
+        { email: req.body.email },
+        { username: req.body.username },
+        { mobileNumber: req.body.mobileNumber },
+      ],
     });
 
     if (existingUser) {
@@ -71,26 +224,39 @@ app.post("/api/users", async (req, res) => {
         error:
           existingUser.email === req.body.email
             ? "Email already exists"
-            : "Username already exists",
+            : existingUser.username === req.body.username
+            ? "Username already exists"
+            : "Mobile number already exists",
       });
     }
+
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(req.body.password, 12);
 
     // Create new user
     const user = new User({
       ...req.body,
-      alternatePhoneNumber: req.body.alternatePhoneNumber || undefined, // Set to undefined if empty
-      // Convert dob string to Date if needed
-      dob: req.body.dob, // Now accepts string directly
+      password: hashedPassword,
+      alternatePhoneNumber: req.body.alternatePhoneNumber || undefined,
+      dob: req.body.dob,
     });
-
+    console.log("JWT_SECRET:", process.env.JWT_SECRET);
     await user.save();
 
-    // Return success response (excluding password)
+    // Generate token
+    const token = jwt.sign(
+      { id: user._id, email: user.email, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    // Remove password from output
     const userResponse = user.toObject();
     delete userResponse.password;
 
     res.status(201).json({
       success: true,
+      token,
       data: userResponse,
     });
   } catch (error) {
@@ -297,8 +463,6 @@ app.post("/api/webhook/interakt", (req, res) => {
   console.log("Received webhook:", req.body);
   res.sendStatus(200); // Respond with 200 to acknowledge receipt
 });
-
-
 
 // Question Model (create models/Question.js)
 const questionSchema = new mongoose.Schema({
