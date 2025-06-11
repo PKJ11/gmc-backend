@@ -55,7 +55,6 @@ app.post("/api/auth/login-with-phone", async (req, res) => {
       });
     }
 
-    
     // Find user by phone number
     const user = await User.findOne({ mobileNumber: phone });
     if (!user) {
@@ -101,7 +100,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     // Find user by email or phone
     const user = await User.findOne({
-      $or: [{ email }, { mobileNumber: phone }]
+      $or: [{ email }, { mobileNumber: phone }],
     }).select("+password");
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -466,6 +465,12 @@ app.post("/api/webhook/interakt", (req, res) => {
 
 // Question Model (create models/Question.js)
 const questionSchema = new mongoose.Schema({
+  testType: {
+    type: String,
+    enum: ['sample', 'live'],
+    default: 'sample',
+    required: true
+  },
   grade: {
     type: String,
     required: true,
@@ -540,18 +545,22 @@ const questionSchema = new mongoose.Schema({
 
 const Question = mongoose.model("Question", questionSchema);
 
-// Add these routes to your existing Express app
 
-// Get all questions (with optional grade filter)
 app.get("/api/questions", async (req, res) => {
   try {
-    const { grade } = req.query;
-    const query = grade ? { grade } : {};
+    const { grade, testType, type, difficulty } = req.query;
+    const query = {};
+    
+    if (grade) query.grade = grade;
+    if (testType) query.testType = testType;
+    if (type) query.type = type;
+    if (difficulty) query.difficulty = difficulty;
 
     const questions = await Question.find(query).sort({
       grade: 1,
       createdAt: -1,
     });
+    
     res.status(200).json({
       success: true,
       data: questions,
@@ -564,9 +573,12 @@ app.get("/api/questions", async (req, res) => {
   }
 });
 
+// Get question statistics (updated to include testType)
 app.get("/api/questions/stats", async (req, res) => {
   try {
     const totalQuestions = await Question.countDocuments();
+    const sampleQuestions = await Question.countDocuments({ testType: 'sample' });
+    const liveQuestions = await Question.countDocuments({ testType: 'live' });
     const gradeLevels = await Question.distinct("grade");
     const questionTypes = await Question.distinct("type");
     const difficultyLevels = await Question.distinct("difficulty");
@@ -575,20 +587,25 @@ app.get("/api/questions/stats", async (req, res) => {
       success: true,
       data: {
         totalQuestions,
+        sampleQuestions,
+        liveQuestions,
         gradeLevels: gradeLevels.length,
         questionTypes: questionTypes.length,
         difficultyLevels: difficultyLevels.length,
       },
     });
   } catch (error) {
-    console.error(error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
-// Create a new question
+// Create a new question (updated to include testType)
 app.post("/api/questions", async (req, res) => {
   try {
-    const { grade, type, question } = req.body;
+    const { grade, type, question, testType = 'sample' } = req.body;
 
     if (!grade || !type || !question) {
       return res.status(400).json({
@@ -601,13 +618,8 @@ app.post("/api/questions", async (req, res) => {
     let validationError;
     switch (type) {
       case "multiple-choice":
-        if (
-          !req.body.options ||
-          req.body.options.length < 2 ||
-          !req.body.correctAnswer
-        ) {
-          validationError =
-            "Multiple-choice questions require options array (min 2) and correctAnswer";
+        if (!req.body.options || req.body.options.length < 2 || !req.body.correctAnswer) {
+          validationError = "Multiple-choice questions require options array (min 2) and correctAnswer";
         }
         break;
       case "short-answer":
@@ -616,13 +628,8 @@ app.post("/api/questions", async (req, res) => {
         }
         break;
       case "drag-and-drop":
-        if (
-          !req.body.items ||
-          req.body.items.length < 2 ||
-          !req.body.correctOrder
-        ) {
-          validationError =
-            "Drag-and-drop questions require items array (min 2) and correctOrder";
+        if (!req.body.items || req.body.items.length < 2 || !req.body.correctOrder) {
+          validationError = "Drag-and-drop questions require items array (min 2) and correctOrder";
         }
         break;
       case "match-pairs":
@@ -644,6 +651,7 @@ app.post("/api/questions", async (req, res) => {
       grade,
       type,
       question,
+      testType,
       difficulty: req.body.difficulty || "medium",
       tags: req.body.tags || [],
       ...(type === "multiple-choice" && {
@@ -753,17 +761,54 @@ app.delete("/api/questions/:id", async (req, res) => {
   }
 });
 
-// Update your sample test endpoint to pull from database
+// Sample test endpoint
 app.get("/api/sample-test/:grade", async (req, res) => {
   try {
-    const grade = req.params.grade || "default";
-    const questions = await Question.find({ grade }).limit(10); // Get 10 questions for the grade
+    const grade = req.params.grade;
+    const questions = await Question.find({ 
+      grade,
+      testType: 'sample'
+    }).limit(10); // Get 10 sample questions for the grade
 
     if (questions.length === 0) {
       // Fallback to default if no questions found for grade
-      const defaultQuestions = await Question.find({ grade: "default" }).limit(
-        10
-      );
+      const defaultQuestions = await Question.find({ 
+        grade: "default",
+        testType: 'sample'
+      }).limit(10);
+      return res.status(200).json({
+        success: true,
+        data: defaultQuestions,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: questions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Live test endpoint
+app.get("/api/live-test/:grade", async (req, res) => {
+  try {
+    const grade = req.params.grade;
+    const questions = await Question.find({ 
+      grade,
+      testType: 'live'
+    }).limit(20); // Get 20 live questions for the grade
+
+    if (questions.length === 0) {
+      // Fallback to default if no questions found for grade
+      const defaultQuestions = await Question.find({ 
+        grade: "default",
+        testType: 'live'
+      }).limit(20);
       return res.status(200).json({
         success: true,
         data: defaultQuestions,
