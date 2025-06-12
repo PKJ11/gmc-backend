@@ -11,6 +11,11 @@ const userSchema = new mongoose.Schema({
   branch: { type: String },
   mobileNumber: { type: String, required: true },
   alternatePhoneNumber: { type: String, required: true },
+  completedTests: [{
+    testType: String,
+    completedAt: Date,
+    score: Number
+  }],
   createdAt: { type: Date, default: Date.now }
 });
 

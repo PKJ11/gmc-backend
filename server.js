@@ -15,6 +15,7 @@ require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const TestResponse = require("./models/TestResponse");
 
 // Enhanced Middleware
 app.use(
@@ -175,6 +176,7 @@ const authMiddleware = async (req, res, next) => {
     });
   }
 };
+
 // Add this to your backend
 app.get("/api/auth/verify", authMiddleware, (req, res) => {
   res.status(200).json({
@@ -463,13 +465,139 @@ app.post("/api/webhook/interakt", (req, res) => {
   res.sendStatus(200); // Respond with 200 to acknowledge receipt
 });
 
+// Check if user can take level 1 test
+app.get("/api/tests/level1/eligibility", async (req, res) => {
+  try {
+    const existingResponse = await TestResponse.findOne({
+      userId: req.user._id,
+      testType: "level1",
+    });
+
+    res.status(200).json({
+      success: true,
+      eligible: !existingResponse,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Submit level 1 test
+app.post("/api/tests/level1/submit", authMiddleware, async (req, res) => {
+  try {
+    const { responses, grade, score, totalQuestions } = req.body;
+
+    // Validate input
+    if (!Array.isArray(responses)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid responses format",
+      });
+    }
+
+    if (typeof score !== "number" || typeof totalQuestions !== "number") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid score or totalQuestions",
+      });
+    }
+
+    // Check if user already took the test
+    const existingResponse = await TestResponse.findOne({
+      userId: req.user._id,
+      testType: "level1",
+    });
+
+    if (existingResponse) {
+      return res.status(400).json({
+        success: false,
+        error: "You have already completed Level 1 test",
+      });
+    }
+
+    // Process responses (without calculating score)
+    const processedResponses = [];
+
+    for (const response of responses) {
+      const question = await Question.findById(response.questionId);
+      if (!question) continue;
+
+      processedResponses.push({
+        questionId: response.questionId,
+        answer: response.answer,
+        timeTaken: response.timeTaken || 0,
+      });
+    }
+
+    // Save test response with score from frontend
+    const testResponse = new TestResponse({
+      userId: req.user._id,
+      testType: "level1",
+      grade,
+      responses: processedResponses,
+      score, // Using score from frontend
+      totalQuestions, // Using totalQuestions from frontend
+    });
+
+    await testResponse.save();
+
+    // Update user's completed tests
+    await User.findByIdAndUpdate(req.user._id, {
+      $push: {
+        completedTests: {
+          testType: "level1",
+          completedAt: new Date(),
+          score,
+        },
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        score,
+        totalQuestions,
+        percentage: Math.round((score / totalQuestions) * 100),
+      },
+    });
+  } catch (error) {
+    console.error("Test submission error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: "Failed to submit test. Please try again.",
+    });
+  }
+});
+
+app.get("/api/users/:id/tests", authMiddleware, async (req, res) => {
+  try {
+    const tests = await TestResponse.find({ userId: req.params.id })
+      .sort({ completedAt: -1 })
+      .populate("responses.questionId", "question type");
+
+    res.status(200).json({
+      success: true,
+      data: tests,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // Question Model (create models/Question.js)
 const questionSchema = new mongoose.Schema({
   testType: {
     type: String,
-    enum: ['sample', 'live'],
-    default: 'sample',
-    required: true
+    enum: ["sample", "live"],
+    default: "sample",
+    required: true,
   },
   grade: {
     type: String,
@@ -545,12 +673,11 @@ const questionSchema = new mongoose.Schema({
 
 const Question = mongoose.model("Question", questionSchema);
 
-
 app.get("/api/questions", async (req, res) => {
   try {
     const { grade, testType, type, difficulty } = req.query;
     const query = {};
-    
+
     if (grade) query.grade = grade;
     if (testType) query.testType = testType;
     if (type) query.type = type;
@@ -560,7 +687,7 @@ app.get("/api/questions", async (req, res) => {
       grade: 1,
       createdAt: -1,
     });
-    
+
     res.status(200).json({
       success: true,
       data: questions,
@@ -577,8 +704,10 @@ app.get("/api/questions", async (req, res) => {
 app.get("/api/questions/stats", async (req, res) => {
   try {
     const totalQuestions = await Question.countDocuments();
-    const sampleQuestions = await Question.countDocuments({ testType: 'sample' });
-    const liveQuestions = await Question.countDocuments({ testType: 'live' });
+    const sampleQuestions = await Question.countDocuments({
+      testType: "sample",
+    });
+    const liveQuestions = await Question.countDocuments({ testType: "live" });
     const gradeLevels = await Question.distinct("grade");
     const questionTypes = await Question.distinct("type");
     const difficultyLevels = await Question.distinct("difficulty");
@@ -605,7 +734,7 @@ app.get("/api/questions/stats", async (req, res) => {
 // Create a new question (updated to include testType)
 app.post("/api/questions", async (req, res) => {
   try {
-    const { grade, type, question, testType = 'sample' } = req.body;
+    const { grade, type, question, testType = "sample" } = req.body;
 
     if (!grade || !type || !question) {
       return res.status(400).json({
@@ -618,8 +747,13 @@ app.post("/api/questions", async (req, res) => {
     let validationError;
     switch (type) {
       case "multiple-choice":
-        if (!req.body.options || req.body.options.length < 2 || !req.body.correctAnswer) {
-          validationError = "Multiple-choice questions require options array (min 2) and correctAnswer";
+        if (
+          !req.body.options ||
+          req.body.options.length < 2 ||
+          !req.body.correctAnswer
+        ) {
+          validationError =
+            "Multiple-choice questions require options array (min 2) and correctAnswer";
         }
         break;
       case "short-answer":
@@ -628,8 +762,13 @@ app.post("/api/questions", async (req, res) => {
         }
         break;
       case "drag-and-drop":
-        if (!req.body.items || req.body.items.length < 2 || !req.body.correctOrder) {
-          validationError = "Drag-and-drop questions require items array (min 2) and correctOrder";
+        if (
+          !req.body.items ||
+          req.body.items.length < 2 ||
+          !req.body.correctOrder
+        ) {
+          validationError =
+            "Drag-and-drop questions require items array (min 2) and correctOrder";
         }
         break;
       case "match-pairs":
@@ -765,16 +904,16 @@ app.delete("/api/questions/:id", async (req, res) => {
 app.get("/api/sample-test/:grade", async (req, res) => {
   try {
     const grade = req.params.grade;
-    const questions = await Question.find({ 
+    const questions = await Question.find({
       grade,
-      testType: 'sample'
+      testType: "sample",
     }).limit(10); // Get 10 sample questions for the grade
 
     if (questions.length === 0) {
       // Fallback to default if no questions found for grade
-      const defaultQuestions = await Question.find({ 
+      const defaultQuestions = await Question.find({
         grade: "default",
-        testType: 'sample'
+        testType: "sample",
       }).limit(10);
       return res.status(200).json({
         success: true,
@@ -798,16 +937,16 @@ app.get("/api/sample-test/:grade", async (req, res) => {
 app.get("/api/live-test/:grade", async (req, res) => {
   try {
     const grade = req.params.grade;
-    const questions = await Question.find({ 
+    const questions = await Question.find({
       grade,
-      testType: 'live'
+      testType: "live",
     }).limit(20); // Get 20 live questions for the grade
 
     if (questions.length === 0) {
       // Fallback to default if no questions found for grade
-      const defaultQuestions = await Question.find({ 
+      const defaultQuestions = await Question.find({
         grade: "default",
-        testType: 'live'
+        testType: "live",
       }).limit(20);
       return res.status(200).json({
         success: true,
