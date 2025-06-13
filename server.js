@@ -67,7 +67,7 @@ app.post("/api/auth/login-with-phone", async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { id: user._id, email: user.email, username: user.username },
+      { id: user._id, username: user.username },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
@@ -89,10 +89,10 @@ app.post("/api/auth/login-with-phone", async (req, res) => {
 // Update your existing login endpoint to support phone login
 app.post("/api/auth/login", async (req, res) => {
   try {
-    const { email, phone, password } = req.body;
+    const {  phone, password } = req.body;
 
     // Check if email or phone exists
-    if ((!email && !phone) || !password) {
+    if ((!phone) || !password) {
       return res.status(400).json({
         success: false,
         error: "Please provide email/phone and password",
@@ -101,7 +101,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     // Find user by email or phone
     const user = await User.findOne({
-      $or: [{ email }, { mobileNumber: phone }],
+      $or: [ { mobileNumber: phone }],
     }).select("+password");
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -113,7 +113,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { id: user._id, email: user.email, username: user.username },
+      { id: user._id,  username: user.username },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
@@ -191,7 +191,6 @@ app.post("/api/users", async (req, res) => {
   try {
     // Validate required fields
     const requiredFields = [
-      "email",
       "username",
       "password",
       "fullName",
@@ -213,7 +212,6 @@ app.post("/api/users", async (req, res) => {
 
     const existingUser = await User.findOne({
       $or: [
-        { email: req.body.email },
         { username: req.body.username },
         { mobileNumber: req.body.mobileNumber },
       ],
@@ -223,9 +221,7 @@ app.post("/api/users", async (req, res) => {
       return res.status(409).json({
         success: false,
         error:
-          existingUser.email === req.body.email
-            ? "Email already exists"
-            : existingUser.username === req.body.username
+          existingUser.username === req.body.username
             ? "Username already exists"
             : "Mobile number already exists",
       });
@@ -246,7 +242,7 @@ app.post("/api/users", async (req, res) => {
 
     // Generate token
     const token = jwt.sign(
-      { id: user._id, email: user.email, username: user.username },
+      { id: user._id,  username: user.username },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
