@@ -41,9 +41,6 @@ mongoose
   .then(() => console.log("MongoDB connected successfully"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// Make sure this path is correct
-
-// Add this new route for phone number login
 // Update your login-with-phone endpoint
 app.post("/api/auth/login-with-phone", async (req, res) => {
   try {
@@ -618,6 +615,9 @@ const questionSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  image: {
+    type: String, // ✅ Add this to store Cloudinary image URL
+  },
   options: {
     type: [mongoose.Schema.Types.Mixed], // Accept both objects and strings
     required: function () {
@@ -730,7 +730,7 @@ app.get("/api/questions/stats", async (req, res) => {
 // Create a new question (updated to include testType)
 app.post("/api/questions", async (req, res) => {
   try {
-    const { grade, type, question, testType = "sample" } = req.body;
+    const { grade, type, question, testType = "sample", image = "" } = req.body;
 
     if (!grade || !type || !question) {
       return res.status(400).json({
@@ -787,6 +787,7 @@ app.post("/api/questions", async (req, res) => {
       type,
       question,
       testType,
+      image, // Add image field
       difficulty: req.body.difficulty || "medium",
       tags: req.body.tags || [],
       ...(type === "multiple-choice" && {
@@ -819,7 +820,6 @@ app.post("/api/questions", async (req, res) => {
     });
   }
 });
-
 // Get a single question by ID
 app.get("/api/questions/:id", async (req, res) => {
   try {
