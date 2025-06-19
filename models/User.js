@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
   school: { type: String, required: true },
   branch: { type: String },
   mobileNumber: { type: String, required: true },
-  alternatePhoneNumber: { type: String, required: true },
+  alternatePhoneNumber: { type: String, required: false },
   completedTests: [{
     testType: String,
     completedAt: Date,
