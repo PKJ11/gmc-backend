@@ -86,10 +86,10 @@ app.post("/api/auth/login-with-phone", async (req, res) => {
 // Update your existing login endpoint to support phone login
 app.post("/api/auth/login", async (req, res) => {
   try {
-    const {  phone, password } = req.body;
+    const { phone, password } = req.body;
 
     // Check if email or phone exists
-    if ((!phone) || !password) {
+    if (!phone || !password) {
       return res.status(400).json({
         success: false,
         error: "Please provide email/phone and password",
@@ -98,7 +98,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     // Find user by email or phone
     const user = await User.findOne({
-      $or: [ { mobileNumber: phone }],
+      $or: [{ mobileNumber: phone }],
     }).select("+password");
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -110,7 +110,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { id: user._id,  username: user.username },
+      { id: user._id, username: user.username },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
@@ -239,7 +239,7 @@ app.post("/api/users", async (req, res) => {
 
     // Generate token
     const token = jwt.sign(
-      { id: user._id,  username: user.username },
+      { id: user._id, username: user.username },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
@@ -583,6 +583,64 @@ app.get("/api/users/:id/tests", authMiddleware, async (req, res) => {
     });
   }
 });
+
+// Define a schema to store the PDF
+const testReportSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  grade: { type: String, required: true },
+  fileName: { type: String, required: true },
+  pdfBuffer: { type: Buffer, required: true },
+  contentType: { type: String, default: "application/pdf" },
+  uploadedAt: { type: Date, default: Date.now }
+});
+
+const TestReport = mongoose.model("TestReport", testReportSchema);
+
+// Add the new API endpoint to your backend
+app.post("/api/tests/upload-report", authMiddleware, upload.single("report"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "No file uploaded" });
+    }
+
+    const { grade } = req.body;
+    const userId = req.user._id;
+
+    // Save the PDF to the database
+    const report = new TestReport({
+      userId,
+      grade,
+      fileName: req.file.originalname,
+      pdfBuffer: req.file.buffer
+    });
+
+    await report.save();
+
+    res.status(201).json({ success: true, message: "Report saved successfully" });
+  } catch (error) {
+    console.error("Error saving test report:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Optional: Endpoint to download the report
+app.get("/api/tests/report/:userId", authMiddleware, async (req, res) => {
+  try {
+    const report = await TestReport.findOne({ userId: req.params.userId }).sort({ uploadedAt: -1 });
+    if (!report) {
+      return res.status(404).json({ success: false, error: "Report not found" });
+    }
+
+    res.set("Content-Type", report.contentType);
+    res.set("Content-Disposition", `attachment; filename=${report.fileName}`);
+    res.send(report.pdfBuffer);
+  } catch (error) {
+    console.error("Error retrieving test report:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
 
 // Question Model (create models/Question.js)
 const questionSchema = new mongoose.Schema({
