@@ -132,6 +132,110 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+app.get("/api/users", async (req, res) => {
+  try {
+    // Optional query parameters for filtering and pagination
+    const { 
+      page = 1, 
+      limit = 10, 
+      grade, 
+      school,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build query object
+    const query = {};
+    if (grade) query.grade = grade;
+    if (school) query.school = new RegExp(school, 'i'); // Case-insensitive search
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Fetch users with pagination and sorting
+    const users = await User.find(query)
+      .select('-password') // Exclude password field
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // Get total count for pagination metadata
+    const totalUsers = await User.countDocuments(query);
+    const totalPages = Math.ceil(totalUsers / parseInt(limit));
+
+    res.status(200).json({
+      success: true,
+      data: users,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalUsers,
+        hasNextPage: parseInt(page) < totalPages,
+        hasPrevPage: parseInt(page) > 1
+      }
+    });
+  } catch (error) {
+    console.error("Get all users error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Alternative endpoint to get all users without pagination (use with caution for large datasets)
+app.get("/api/users/all", async (req, res) => {
+  try {
+    const users = await User.find({})
+      .select('-password') // Exclude password field
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: users,
+      count: users.length
+    });
+  } catch (error) {
+    console.error("Get all users error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get users statistics endpoint
+app.get("/api/users/stats", async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    const usersByGrade = await User.aggregate([
+      { $group: { _id: "$grade", count: { $sum: 1 } } }
+    ]);
+    const usersBySchool = await User.aggregate([
+      { $group: { _id: "$school", count: { $sum: 1 } } }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalUsers,
+        usersByGrade,
+        usersBySchool
+      }
+    });
+  } catch (error) {
+    console.error("Get users stats error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 const authMiddleware = async (req, res, next) => {
   try {
     // 1) Getting token and check if it's there
