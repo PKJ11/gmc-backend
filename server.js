@@ -748,6 +748,12 @@ app.get("/api/tests/report/:userId", authMiddleware, async (req, res) => {
 
 // Question Model (create models/Question.js)
 const questionSchema = new mongoose.Schema({
+  testCategory: {
+    type: String,
+    enum: ["gmc", "vnit"], // Add other test categories as needed
+    default: "gmc",
+    required: true
+  },
   testType: {
     type: String,
     enum: ["sample", "live"],
@@ -833,8 +839,8 @@ const Question = mongoose.model("Question", questionSchema);
 
 app.get("/api/questions", async (req, res) => {
   try {
-    const { grade, testType, type, difficulty } = req.query;
-    const query = {};
+     const { grade, testType, type, difficulty, testCategory = "gmc" } = req.query;
+    const query = { testCategory };
 
     if (grade) query.grade = grade;
     if (testType) query.testType = testType;
@@ -892,7 +898,7 @@ app.get("/api/questions/stats", async (req, res) => {
 // Create a new question (updated to include testType)
 app.post("/api/questions", async (req, res) => {
   try {
-    const { grade, type, question, testType = "sample", image = "" } = req.body;
+    const { grade, type, question, testType = "sample", testCategory = "gmc", image = "" } = req.body;
 
     if (!grade || !type || !question) {
       return res.status(400).json({
@@ -945,6 +951,7 @@ app.post("/api/questions", async (req, res) => {
 
     // Transform data based on question type
     const questionData = {
+      testCategory,
       grade,
       type,
       question,
@@ -1120,6 +1127,43 @@ app.get("/api/live-test/:grade", async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
+    });
+  }
+});
+
+app.get("/api/questions/count", async (req, res) => {
+  try {
+    const { testCategory = "gmc" } = req.query;
+    const counts = await Question.aggregate([
+      { $match: { testCategory } },
+      { 
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          sample: { $sum: { $cond: [{ $eq: ["$testType", "sample"] }, 1, 0] } },
+          live: { $sum: { $cond: [{ $eq: ["$testType", "live"] }, 1, 0] } },
+          grades: { $addToSet: "$grade" },
+          types: { $addToSet: "$type" },
+          difficulties: { $addToSet: "$difficulty" }
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalQuestions: counts[0]?.total || 0,
+        sampleQuestions: counts[0]?.sample || 0,
+        liveQuestions: counts[0]?.live || 0,
+        gradeLevels: counts[0]?.grades?.length || 0,
+        questionTypes: counts[0]?.types?.length || 0,
+        difficultyLevels: counts[0]?.difficulties?.length || 0
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
