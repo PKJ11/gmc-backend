@@ -989,6 +989,77 @@ app.post("/api/questions", async (req, res) => {
     });
   }
 });
+
+app.get("/api/questions/count", async (req, res) => {
+  try {
+    const { testCategory = "gmc" } = req.query;
+    
+    // Validate testCategory if needed
+    if (typeof testCategory !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid testCategory parameter"
+      });
+    }
+
+    const counts = await Question.aggregate([
+      { $match: { testCategory } },
+      { 
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          sample: { $sum: { $cond: [{ $eq: ["$testType", "sample"] }, 1, 0] } },
+          live: { $sum: { $cond: [{ $eq: ["$testType", "live"] }, 1, 0] } },
+          grades: { $addToSet: "$grade" },
+          types: { $addToSet: "$type" },
+          difficulties: { $addToSet: "$difficulty" }
+        }
+      },
+      // Add a project stage to handle empty results
+      {
+        $project: {
+          total: { $ifNull: ["$total", 0] },
+          sample: { $ifNull: ["$sample", 0] },
+          live: { $ifNull: ["$live", 0] },
+          grades: { $ifNull: ["$grades", []] },
+          types: { $ifNull: ["$types", []] },
+          difficulties: { $ifNull: ["$difficulties", []] }
+        }
+      }
+    ]);
+
+    // Handle case when no documents match
+    const result = counts[0] || {
+      total: 0,
+      sample: 0,
+      live: 0,
+      grades: [],
+      types: [],
+      difficulties: []
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalQuestions: result.total,
+        sampleQuestions: result.sample,
+        liveQuestions: result.live,
+        gradeLevels: result.grades.length,
+        questionTypes: result.types.length,
+        difficultyLevels: result.difficulties.length
+      }
+    });
+
+  } catch (error) {
+    console.error("Error in /api/questions/count:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
 // Get a single question by ID
 app.get("/api/questions/:id", async (req, res) => {
   try {
@@ -1131,42 +1202,7 @@ app.get("/api/live-test/:grade", async (req, res) => {
   }
 });
 
-app.get("/api/questions/count", async (req, res) => {
-  try {
-    const { testCategory = "gmc" } = req.query;
-    const counts = await Question.aggregate([
-      { $match: { testCategory } },
-      { 
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          sample: { $sum: { $cond: [{ $eq: ["$testType", "sample"] }, 1, 0] } },
-          live: { $sum: { $cond: [{ $eq: ["$testType", "live"] }, 1, 0] } },
-          grades: { $addToSet: "$grade" },
-          types: { $addToSet: "$type" },
-          difficulties: { $addToSet: "$difficulty" }
-        }
-      }
-    ]);
 
-    res.status(200).json({
-      success: true,
-      data: {
-        totalQuestions: counts[0]?.total || 0,
-        sampleQuestions: counts[0]?.sample || 0,
-        liveQuestions: counts[0]?.live || 0,
-        gradeLevels: counts[0]?.grades?.length || 0,
-        questionTypes: counts[0]?.types?.length || 0,
-        difficultyLevels: counts[0]?.difficulties?.length || 0
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
 
 // Custom HTML template for PDF emails
 function generatePdfEmailTemplate(subject, text) {
